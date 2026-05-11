@@ -81,6 +81,7 @@ def slicing_arg_parser(interactive: bool = True) -> argparse.Namespace:
     )
     parser.add_argument("--eval-baseline", action="store_true", help="Evaluate the baseline model.")
     parser.add_argument("--eval-fused-model", action="store_true", help="Evaluate the fused model.")
+    parser.add_argument("--eval-pruned-model", action="store_true", help="Evaluate the pruned model.")
     parser.add_argument("--ppl-only", action="store_true", help="Evaluate the loaded model without doing compression.")
     parser.add_argument(
         "--distribute-model",
@@ -170,9 +171,10 @@ def slicing_main(args: argparse.Namespace) -> None:
         varied_seqlen=args.varied_seqlen,
         seed=args.seed,
     )
-    test_loader = data_utils.prepare_test_dataloader(
-        dataset=test_dataset, tokenizer=tokenizer, batch_size=args.ppl_eval_batch_size
-    )
+    if args.eval_baseline or args.eval_fused_model or args.eval_pruned_model or args.ppl_only or args.sliced_model_path:
+        test_loader = data_utils.prepare_test_dataloader(
+            dataset=test_dataset, tokenizer=tokenizer, batch_size=args.ppl_eval_batch_size
+        )
 
     # evaluate perplexity and exit if sliced model is loaded or if ppl_only is set
     if args.sliced_model_path or args.ppl_only:
@@ -218,7 +220,7 @@ def slicing_main(args: argparse.Namespace) -> None:
     # round (down) to the nearest multiple of round_interval
     new_embedding_dimension -= new_embedding_dimension % args.round_interval
     logging.info(
-        f"New embedding dimension: {new_embedding_dimension} (sparsity {100*(1 - new_embedding_dimension / model_adapter.hidden_size):.4f} %)"
+        f"New embedding dimension: {new_embedding_dimension} (sparsity {100 * (1 - new_embedding_dimension / model_adapter.hidden_size):.4f} %)"
     )
 
     scheduler = ConstSlicingScheduler(new_embedding_dimension)
@@ -255,10 +257,11 @@ def slicing_main(args: argparse.Namespace) -> None:
 
         logging.info(f"Saved sliced model to {args.save_dir}")
 
-    reset_model_device()
-    dataset_ppl = gpu_utils.evaluate_ppl(model, model.config.pad_token_id, test_loader)
-    logging.info(f'After rotating and slicing {dataset_ppl:.4f}')
-    wandb.log({"sliced_ppl": dataset_ppl})
+    if args.eval_pruned_model:
+        reset_model_device()
+        dataset_ppl = gpu_utils.evaluate_ppl(model, model.config.pad_token_id, test_loader)
+        logging.info(f'After rotating and slicing {dataset_ppl:.4f}')
+        wandb.log({"sliced_ppl": dataset_ppl})
 
     sliced_param_count = sum(int(p.nelement()) for p in model.parameters())
     sliced_fraction = 1.0 - sliced_param_count / original_param_count
