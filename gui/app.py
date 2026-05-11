@@ -2,11 +2,13 @@ import re
 import sys, os
 import json
 
+import numpy as np
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QProcess, QProcessEnvironment
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, \
     QDoubleSpinBox, QPushButton, QPlainTextEdit, QTabWidget, QSizePolicy
 import pyqtgraph as pg
+from scipy.interpolate import make_interp_spline
 
 SPARSITY_X_FIELD = "sparsity"
 PARAMS_COUNT_X_FIELD = "params_count"
@@ -296,15 +298,19 @@ class MainWindow(QMainWindow):
                         if x_val is not None and y_val is not None:
                             x_values.append(float(x_val))
                             y_values.append(float(y_val))
-
+                x_values.sort()
+                y_values.sort(reverse=True)
+                x_new = np.linspace(min(x_values), max(x_values), 100)
+                spl = make_interp_spline(x_values, y_values, k=3)
+                y_new = spl(x_new)
                 res.append({
                     "x": {
                         "label": x_label,
-                        "values": x_values,
+                        "values": x_new,
                     },
                     "y": {
                         "label": y_label,
-                        "values": y_values,
+                        "values": y_new,
                     }
                 })
             except KeyError:
@@ -329,6 +335,7 @@ class MainWindow(QMainWindow):
             y_label, y_values = d["y"]['label'], d["y"]['values']
             self.graph.setLabel("bottom", x_label)
             self.graph.setLabel("left", "Precision")
+            self.graph.addLegend()
             self.graph.plot(x_values, y_values, pen=pen, symbol='o', name=y_label)
 
     def evaluate_perplexity(self):
